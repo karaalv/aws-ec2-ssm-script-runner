@@ -3,8 +3,9 @@
 Reusable GitHub Action that downloads a shell script from S3 and runs it on an
 EC2 instance through AWS Systems Manager (SSM), without SSH.
 
-**Release status:** Unreleased. Examples use `main`; pin a reviewed commit SHA
-for production workflows.
+**Release status:** `v0` is a prerelease for controlled stability testing.
+The action needs real workflow use and validation before a stable `v1` release.
+Examples use `v0`; pin a reviewed commit SHA when reproducibility is required.
 
 ## Usage
 
@@ -28,7 +29,7 @@ jobs:
 
       - name: Run deployment script on EC2
         id: deploy
-        uses: karaalv/aws-ec2-ssm-script-runner@main
+        uses: karaalv/aws-ec2-ssm-script-runner@v0
         with:
           instance-name: accounting-staging
           bucket-name: example-deployment-scripts
