@@ -1,9 +1,13 @@
 """Build the shell commands executed by SSM on the instance."""
 
+from __future__ import annotations
+
 import shlex
 
+from .config import Config
 
-def remote_commands(config):
+
+def remote_commands(config: Config) -> list[str]:
 	filename = shlex.quote(config.filename)
 	uri = shlex.quote(f's3://{config.bucket}/{config.key}')
 	exports = [

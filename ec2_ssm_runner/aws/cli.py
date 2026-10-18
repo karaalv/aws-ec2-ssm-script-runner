@@ -1,12 +1,16 @@
 """Bounded AWS CLI calls and structured error handling."""
 
+from __future__ import annotations
+
 import json
 import os
 import re
 import subprocess
 import tempfile
 import time
+from collections.abc import Mapping
 from contextlib import ExitStack
+from typing import Any, cast
 
 from ..errors import AwsError, DeadlineExceeded
 
@@ -14,13 +18,13 @@ from ..errors import AwsError, DeadlineExceeded
 class AwsCli:
 	def call(
 		self,
-		service,
-		operation,
+		service: str,
+		operation: str,
 		*,
-		payload=None,
-		deadline=None,
-		**params,
-	):
+		payload: Mapping[str, object] | None = None,
+		deadline: float | None = None,
+		**params: str | int | bool,
+	) -> dict[str, Any]:
 		remaining = (
 			30 if deadline is None else deadline - time.monotonic()
 		)
@@ -98,7 +102,7 @@ class AwsCli:
 				code = 'ConnectionError'
 			raise AwsError(code, result.stderr.strip())
 		try:
-			return json.loads(result.stdout)
+			return cast(dict[str, Any], json.loads(result.stdout))
 		except json.JSONDecodeError as exc:
 			raise AwsError(
 				'InvalidResponse', 'AWS CLI returned invalid JSON'

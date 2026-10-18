@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import json
 import subprocess
 import unittest
@@ -9,13 +11,16 @@ from ec2_ssm_runner.errors import AwsError
 
 
 class AwsCliTests(unittest.TestCase):
-	def test_private_payload_and_no_submission_retry(self):
+	def test_private_payload_and_no_submission_retry(self) -> None:
 		completed = subprocess.CompletedProcess(
 			[], 0, '{"Command": {"CommandId": "cmd"}}', ''
 		)
 		recorded = {}
 
-		def invoke(args, **kwargs):
+		def invoke(
+			args: list[str],
+			**kwargs: object,
+		) -> subprocess.CompletedProcess[str]:
 			path = Path(
 				args[args.index('--cli-input-json') + 1].removeprefix(
 					'file://'
@@ -44,7 +49,7 @@ class AwsCliTests(unittest.TestCase):
 		self.assertEqual(kwargs['env']['AWS_MAX_ATTEMPTS'], '1')
 		self.assertEqual(kwargs['timeout'], 30)
 
-	def test_cli_error_codes_are_classified(self):
+	def test_cli_error_codes_are_classified(self) -> None:
 		completed = subprocess.CompletedProcess(
 			[],
 			254,
@@ -63,7 +68,9 @@ class AwsCliTests(unittest.TestCase):
 			error.exception.code, 'AccessDeniedException'
 		)
 
-	def test_client_calls_are_bounded_by_monitoring_deadline(self):
+	def test_client_calls_are_bounded_by_monitoring_deadline(
+		self,
+	) -> None:
 		with (
 			patch.object(aws_cli.time, 'monotonic', return_value=10),
 			patch.object(

@@ -1,18 +1,24 @@
 """Direct SSM output snapshots, duplicate suppression and limits."""
 
+from __future__ import annotations
+
+from ..aws.types import InvocationOutput
 from .console import log, remote_log
 
 
 class SsmOutput:
-	def __init__(self):
+	def __init__(self) -> None:
 		self.seen = {'stdout': '', 'stderr': ''}
 
-	def emit(self, snapshot, final=False):
-		for stream, key in (
-			('stdout', 'StandardOutputContent'),
-			('stderr', 'StandardErrorContent'),
+	def emit(
+		self,
+		snapshot: InvocationOutput,
+		final: bool = False,
+	) -> None:
+		for stream, current in (
+			('stdout', snapshot.get('StandardOutputContent') or ''),
+			('stderr', snapshot.get('StandardErrorContent') or ''),
 		):
-			current = snapshot.get(key) or ''
 			previous = self.seen[stream]
 			delta = (
 				current[len(previous) :]

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import contextlib
 import io
 import os
@@ -8,6 +10,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from ec2_ssm_runner import runner
+from ec2_ssm_runner.config import Config
 from ec2_ssm_runner.errors import AwsError, Interrupted
 from tests.support import (
 	Clock,
@@ -20,7 +23,11 @@ from tests.support import (
 
 
 class RunnerTests(unittest.TestCase):
-	def run_action(self, aws, cfg=None):
+	def run_action(
+		self,
+		aws: FakeAws,
+		cfg: Config | None = None,
+	) -> tuple[int, str, str]:
 		clock = Clock()
 		with tempfile.TemporaryDirectory() as directory:
 			output = Path(directory) / 'outputs'
@@ -41,7 +48,9 @@ class RunnerTests(unittest.TestCase):
 				output.read_text() if output.exists() else '',
 			)
 
-	def test_poll_once_per_cycle_and_preserve_both_streams(self):
+	def test_poll_once_per_cycle_and_preserve_both_streams(
+		self,
+	) -> None:
 		aws = FakeAws(
 			{
 				'send-command': [{'Command': {'CommandId': 'cmd'}}],
@@ -67,7 +76,7 @@ class RunnerTests(unittest.TestCase):
 			payload['Parameters']['executionTimeout'], ['10']
 		)
 
-	def test_ssm_prints_only_new_text(self):
+	def test_ssm_prints_only_new_text(self) -> None:
 		aws = FakeAws(
 			{
 				'send-command': [{'Command': {'CommandId': 'cmd'}}],
@@ -81,7 +90,7 @@ class RunnerTests(unittest.TestCase):
 		self.assertEqual(logs.count('[ssm/stdout] first'), 1)
 		self.assertEqual(logs.count('[ssm/stdout] second'), 1)
 
-	def test_propagation_and_throttling_are_retried(self):
+	def test_propagation_and_throttling_are_retried(self) -> None:
 		aws = FakeAws(
 			{
 				'send-command': [{'Command': {'CommandId': 'cmd'}}],
@@ -96,7 +105,7 @@ class RunnerTests(unittest.TestCase):
 		self.assertEqual(result, 0)
 		self.assertIn('ThrottlingException', logs)
 
-	def test_permission_failure_is_visible_and_cancels(self):
+	def test_permission_failure_is_visible_and_cancels(self) -> None:
 		aws = FakeAws(
 			{
 				'send-command': [{'Command': {'CommandId': 'cmd'}}],
@@ -116,7 +125,7 @@ class RunnerTests(unittest.TestCase):
 			sum(c[1] == 'cancel-command' for c in aws.calls), 1
 		)
 
-	def test_timeout_attempts_cancellation(self):
+	def test_timeout_attempts_cancellation(self) -> None:
 		aws = FakeAws(
 			{
 				'send-command': [{'Command': {'CommandId': 'cmd'}}],
@@ -134,7 +143,7 @@ class RunnerTests(unittest.TestCase):
 			sum(c[1] == 'cancel-command' for c in aws.calls), 1
 		)
 
-	def test_interruption_cancels_and_preserves_output(self):
+	def test_interruption_cancels_and_preserves_output(self) -> None:
 		aws = FakeAws(
 			{
 				'send-command': [{'Command': {'CommandId': 'cmd'}}],
@@ -150,7 +159,9 @@ class RunnerTests(unittest.TestCase):
 		self.assertIn('[ssm/stdout] before interruption', logs)
 		self.assertIn('status=Cancelled', output)
 
-	def test_retries_are_bounded_and_cancel_errors_are_visible(self):
+	def test_retries_are_bounded_and_cancel_errors_are_visible(
+		self,
+	) -> None:
 		error = AwsError('ThrottlingException', 'slow down')
 		aws = FakeAws(
 			{
@@ -168,7 +179,9 @@ class RunnerTests(unittest.TestCase):
 		self.assertIn('Cancellation could not be confirmed', logs)
 		self.assertIn('status=MonitoringFailed', output)
 
-	def test_remote_failure_and_nonzero_success_fail_action(self):
+	def test_remote_failure_and_nonzero_success_fail_action(
+		self,
+	) -> None:
 		for status in ('Failed', 'Success'):
 			with self.subTest(status=status):
 				aws = FakeAws(
@@ -188,7 +201,7 @@ class RunnerTests(unittest.TestCase):
 				self.assertIn('[ssm/stderr] script failed', logs)
 				self.assertIn('exit-code=7', output)
 
-	def test_cancelling_is_not_a_terminal_state(self):
+	def test_cancelling_is_not_a_terminal_state(self) -> None:
 		aws = FakeAws(
 			{
 				'send-command': [{'Command': {'CommandId': 'cmd'}}],
@@ -202,7 +215,7 @@ class RunnerTests(unittest.TestCase):
 		self.assertEqual(result, 1)
 		self.assertIn('SSM status: Cancelled', logs)
 
-	def test_submission_is_not_retried(self):
+	def test_submission_is_not_retried(self) -> None:
 		aws = FakeAws(
 			{'send-command': [AwsError('ClientTimeout', 'timeout')]}
 		)
@@ -212,7 +225,7 @@ class RunnerTests(unittest.TestCase):
 		self.assertEqual(output, '')
 		self.assertIn('check SSM before rerunning', logs)
 
-	def test_cloudwatch_denial_uses_ssm_backup(self):
+	def test_cloudwatch_denial_uses_ssm_backup(self) -> None:
 		aws = FakeAws(
 			{
 				'send-command': [{'Command': {'CommandId': 'cmd'}}],
@@ -237,7 +250,7 @@ class RunnerTests(unittest.TestCase):
 			]
 		)
 
-	def test_drain_keeps_late_events_and_ssm_backup(self):
+	def test_drain_keeps_late_events_and_ssm_backup(self) -> None:
 		name = 'cmd/i-example/plugin/stdout'
 		aws = FakeAws(
 			{
@@ -266,7 +279,7 @@ class RunnerTests(unittest.TestCase):
 		self.assertEqual(logs.count('[cloudwatch/stdout] late'), 1)
 		self.assertIn('[ssm/stdout] complete', logs)
 
-	def test_ssm_truncation_is_reported(self):
+	def test_ssm_truncation_is_reported(self) -> None:
 		aws = FakeAws(
 			{
 				'send-command': [{'Command': {'CommandId': 'cmd'}}],
@@ -278,7 +291,7 @@ class RunnerTests(unittest.TestCase):
 		_, logs, _ = self.run_action(aws)
 		self.assertIn('24000-character limit', logs)
 
-	def test_instance_name_resolution_checks_every_page(self):
+	def test_instance_name_resolution_checks_every_page(self) -> None:
 		aws = FakeAws(
 			{
 				'describe-instances': [

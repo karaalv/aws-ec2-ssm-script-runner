@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import os
 import subprocess
 import tempfile
@@ -11,7 +13,7 @@ from tests.support import (
 
 
 class EntrypointTests(unittest.TestCase):
-	def test_bash_entrypoint_with_fake_aws_process(self):
+	def test_bash_entrypoint_with_fake_aws_process(self) -> None:
 		with tempfile.TemporaryDirectory() as directory:
 			root = Path(directory)
 			make_aws(root)

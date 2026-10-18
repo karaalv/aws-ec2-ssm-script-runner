@@ -1,24 +1,40 @@
 """Incremental CloudWatch output collection with SSM fallback."""
 
-import time
+from __future__ import annotations
 
+import time
+from typing import cast
+
+from ..aws.types import (
+	AwsTransport,
+	LogEventQuery,
+	LogEventsPage,
+	LogStreamQuery,
+	LogStreamsPage,
+)
 from ..errors import TRANSIENT, AwsError, DeadlineExceeded
 from .console import log, remote_log
 
 
 class CloudWatch:
-	def __init__(self, aws, group, command_id, instance_id):
+	def __init__(
+		self,
+		aws: AwsTransport,
+		group: str,
+		command_id: str,
+		instance_id: str,
+	) -> None:
 		self.aws = aws
 		self.group = group
 		self.prefix = f'{command_id}/{instance_id}/'
-		self.tokens = {}
-		self.discovery_token = None
+		self.tokens: dict[str, str | None] = {}
+		self.discovery_token: str | None = None
 		self.disabled = False
-		self.warned = set()
+		self.warned: set[str] = set()
 		self.events = 0
 		self.caught_up = True
 
-	def poll(self, deadline):
+	def poll(self, deadline: float | None) -> None:
 		if self.disabled:
 			return
 		try:
@@ -40,7 +56,7 @@ class CloudWatch:
 					'using SSM output'
 				)
 
-	def _poll(self, deadline):
+	def _poll(self, deadline: float | None) -> None:
 		if len(self.tokens) < 2:
 			self._discover_streams(deadline)
 		self.caught_up = True
@@ -48,19 +64,22 @@ class CloudWatch:
 			if not self._read_stream(name, deadline):
 				self.caught_up = False
 
-	def _discover_streams(self, deadline):
+	def _discover_streams(self, deadline: float | None) -> None:
 		# Discover names without assuming the SSM plugin identifier.
-		params = dict(
+		params: LogStreamQuery = dict(
 			log_group_name=self.group,
 			log_stream_name_prefix=self.prefix,
 		)
 		if self.discovery_token:
 			params['next_token'] = self.discovery_token
-		page = self.aws.call(
-			'logs',
-			'describe-log-streams',
-			deadline=deadline,
-			**params,
+		page = cast(
+			LogStreamsPage,
+			self.aws.call(
+				'logs',
+				'describe-log-streams',
+				deadline=deadline,
+				**params,
+			),
 		)
 		self.discovery_token = page.get('nextToken')
 		for stream in page.get('logStreams', []):
@@ -72,22 +91,29 @@ class CloudWatch:
 			}:
 				self.tokens.setdefault(name, None)
 
-	def _read_stream(self, name, deadline):
+	def _read_stream(
+		self,
+		name: str,
+		deadline: float | None,
+	) -> bool:
 		token = self.tokens[name]
 		# Bound each poll so busy streams cannot starve status checks.
 		for _ in range(10):
-			params = dict(
+			params: LogEventQuery = dict(
 				log_group_name=self.group,
 				log_stream_name=name,
 				start_from_head=True,
 			)
 			if token:
 				params['next_token'] = token
-			page = self.aws.call(
-				'logs',
-				'get-log-events',
-				deadline=deadline,
-				**params,
+			page = cast(
+				LogEventsPage,
+				self.aws.call(
+					'logs',
+					'get-log-events',
+					deadline=deadline,
+					**params,
+				),
 			)
 			for event in page.get('events', []):
 				remote_log(
@@ -102,7 +128,7 @@ class CloudWatch:
 			token = new_token
 		return False
 
-	def drain(self, seconds, poll):
+	def drain(self, seconds: int, poll: int) -> None:
 		if self.disabled or seconds == 0:
 			return
 		log(f'Waiting up to {seconds}s for delayed CloudWatch output')

@@ -213,6 +213,7 @@ ec2_ssm_runner/
   github.py           Action outputs and value masking
   errors.py           Execution errors and retryable AWS codes
   aws/
+    types.py          AWS response shapes and transport interface
     cli.py            Bounded AWS CLI requests and JSON handling
     ssm.py            Instance lookup and SSM API operations
   logs/
@@ -227,7 +228,11 @@ tests/
 
 Start with `runner.py` for the execution flow. AWS operations live under `aws/`,
 and both output paths live under `logs/`. `config.py` owns input validation;
-`remote.py` owns the shell payload sent to the instance.
+`remote.py` owns the shell payload sent to the instance. Functions declare
+parameter and return types, with `TypedDict` response shapes and an
+`AwsTransport` protocol describing the real client and test double interface.
+The AWS adapters narrow JSON responses to those shapes using `cast`; the
+annotations do not add runtime validation or dependencies.
 
 The Ruff configuration in `pyproject.toml` matches the portfolio agent exactly:
 70-character lines, single quotes, tabs, automatic fixes, and the `E`, `F`, `I`,

@@ -1,19 +1,34 @@
 """SSM submission, invocation status, cancellation and EC2 lookup."""
 
+from __future__ import annotations
+
+from typing import cast
+
+from ..config import Config
 from ..remote import remote_commands
+from .types import (
+	AwsTransport,
+	InstancesPage,
+	Invocation,
+	Submission,
+)
 
 TERMINAL = {'Success', 'Failed', 'Cancelled', 'TimedOut'}
 ACTIVE = {'Pending', 'InProgress', 'Delayed', 'Cancelling'}
 
 
 class SsmClient:
-	def __init__(self, aws):
+	def __init__(self, aws: AwsTransport) -> None:
 		self.aws = aws
 
-	def resolve_instance(self, instance_id, instance_name):
+	def resolve_instance(
+		self,
+		instance_id: str,
+		instance_name: str,
+	) -> str:
 		if instance_id:
 			return instance_id
-		payload = {
+		payload: dict[str, object] = {
 			'Filters': [
 				{'Name': 'tag:Name', 'Values': [instance_name]},
 				{
@@ -22,12 +37,15 @@ class SsmClient:
 				},
 			]
 		}
-		instances = []
+		instances: list[str] = []
 		while True:
-			response = self.aws.call(
-				'ec2',
-				'describe-instances',
-				payload=payload,
+			response = cast(
+				InstancesPage,
+				self.aws.call(
+					'ec2',
+					'describe-instances',
+					payload=payload,
+				),
 			)
 			instances.extend(
 				item['InstanceId']
@@ -45,8 +63,8 @@ class SsmClient:
 			)
 		return instances[0]
 
-	def submit(self, config):
-		payload = {
+	def submit(self, config: Config) -> str:
+		payload: dict[str, object] = {
 			'InstanceIds': [config.instance_id],
 			'DocumentName': 'AWS-RunShellScript',
 			'TimeoutSeconds': max(30, config.timeout),
@@ -61,23 +79,35 @@ class SsmClient:
 				'CloudWatchLogGroupName': config.group,
 			}
 		# An ambiguous failure must not submit the script twice.
-		response = self.aws.call(
-			'ssm',
-			'send-command',
-			payload=payload,
+		response = cast(
+			Submission,
+			self.aws.call('ssm', 'send-command', payload=payload),
 		)
 		return response['Command']['CommandId']
 
-	def invocation(self, command_id, instance_id, deadline):
-		return self.aws.call(
-			'ssm',
-			'get-command-invocation',
-			command_id=command_id,
-			instance_id=instance_id,
-			deadline=deadline,
+	def invocation(
+		self,
+		command_id: str,
+		instance_id: str,
+		deadline: float,
+	) -> Invocation:
+		return cast(
+			Invocation,
+			self.aws.call(
+				'ssm',
+				'get-command-invocation',
+				command_id=command_id,
+				instance_id=instance_id,
+				deadline=deadline,
+			),
 		)
 
-	def cancel(self, command_id, instance_id, deadline):
+	def cancel(
+		self,
+		command_id: str,
+		instance_id: str,
+		deadline: float,
+	) -> None:
 		self.aws.call(
 			'ssm',
 			'cancel-command',

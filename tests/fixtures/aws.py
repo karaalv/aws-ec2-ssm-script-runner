@@ -1,12 +1,14 @@
 """Fake AWS executable for entry-point and remote shell tests."""
 
+from __future__ import annotations
+
 import json
 import os
 import sys
 from pathlib import Path
 
 
-def main():
+def main() -> None:
 	if sys.argv[1:4] == ['s3', 'cp', '--']:
 		Path(sys.argv[-1]).write_text(os.environ['MOCK_SCRIPT'])
 		return

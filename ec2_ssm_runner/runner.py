@@ -1,9 +1,13 @@
 """Coordinate submission, monitoring, logging and failure cleanup."""
 
+from __future__ import annotations
+
 import time
 
 from . import github
 from .aws.ssm import ACTIVE, TERMINAL, SsmClient
+from .aws.types import AwsTransport, InvocationOutput
+from .config import Config
 from .errors import TRANSIENT, AwsError, DeadlineExceeded, Interrupted
 from .logs.cloudwatch import CloudWatch
 from .logs.console import log
@@ -11,18 +15,22 @@ from .logs.ssm import SsmOutput
 
 
 class Runner:
-	def __init__(self, config, aws):
+	def __init__(
+		self,
+		config: Config,
+		aws: AwsTransport,
+	) -> None:
 		self.config = config
 		self.aws = aws
 		self.ssm = SsmClient(aws)
-		self.command_id = None
+		self.command_id: str | None = None
 		self.status = 'Pending'
-		self.exit_code = ''
-		self.snapshot = {}
+		self.exit_code: int | str = ''
+		self.snapshot: InvocationOutput = {}
 		self.ssm_logs = SsmOutput()
-		self.cloudwatch = None
+		self.cloudwatch: CloudWatch | None = None
 
-	def run(self):
+	def run(self) -> int:
 		try:
 			self._submit()
 			self._monitor()
@@ -30,7 +38,7 @@ class Runner:
 		except (RuntimeError, ValueError, OSError) as exc:
 			return self._handle_failure(exc)
 
-	def _submit(self):
+	def _submit(self) -> None:
 		self.config.instance_id = self.ssm.resolve_instance(
 			self.config.instance_id,
 			self.config.instance_name,
@@ -49,7 +57,8 @@ class Runner:
 			)
 			log(f'CloudWatch log group: {self.config.group}')
 
-	def _monitor(self):
+	def _monitor(self) -> None:
+		assert self.command_id is not None
 		deadline = time.monotonic() + self.config.timeout
 		failures = 0
 		last_status = None
@@ -60,13 +69,14 @@ class Runner:
 					f'Timed out after {self.config.timeout}s'
 				)
 			try:
-				self.snapshot = self.ssm.invocation(
+				invocation = self.ssm.invocation(
 					self.command_id,
 					self.config.instance_id,
 					deadline,
 				)
+				self.snapshot = invocation
 				failures = 0
-				self.status = self.snapshot['Status']
+				self.status = invocation['Status']
 				self.exit_code = self.snapshot.get('ResponseCode', '')
 				now = time.monotonic()
 				if (
@@ -105,7 +115,7 @@ class Runner:
 				)
 			)
 
-	def _heartbeat(self, deadline, now):
+	def _heartbeat(self, deadline: float, now: float) -> None:
 		elapsed = int(self.config.timeout - (deadline - now))
 		details = self.snapshot.get('StatusDetails', self.status)
 		log(
@@ -113,11 +123,11 @@ class Runner:
 			f'elapsed {elapsed}s'
 		)
 
-	def _ssm_output(self, final=False):
+	def _ssm_output(self, final: bool = False) -> None:
 		if final or not self.cloudwatch or self.cloudwatch.disabled:
 			self.ssm_logs.emit(self.snapshot, final=final)
 
-	def _finish(self):
+	def _finish(self) -> int:
 		github.output(
 			status=self.status,
 			**{'exit-code': self.exit_code},
@@ -142,7 +152,7 @@ class Runner:
 			else 1
 		)
 
-	def _cancel(self):
+	def _cancel(self) -> None:
 		if self.command_id and self.status not in TERMINAL:
 			log(
 				'Requesting cancellation of SSM command '
@@ -160,7 +170,8 @@ class Runner:
 					f'confirmed: {exc}'
 				)
 
-	def _final_diagnostics(self):
+	def _final_diagnostics(self) -> None:
+		assert self.command_id is not None
 		# Preserve the last known snapshot if the final request fails.
 		try:
 			self.snapshot = self.ssm.invocation(
@@ -178,7 +189,10 @@ class Runner:
 		log('SSM backup output after monitoring stopped:')
 		self._ssm_output(final=True)
 
-	def _handle_failure(self, error):
+	def _handle_failure(
+		self,
+		error: RuntimeError | ValueError | OSError,
+	) -> int:
 		log(f'[error] {error}')
 		if (
 			not self.command_id

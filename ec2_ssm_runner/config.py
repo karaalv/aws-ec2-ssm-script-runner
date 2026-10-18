@@ -1,10 +1,19 @@
 """Read and validate composite action inputs."""
 
+from __future__ import annotations
+
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 
-def integer(env, name, default, minimum=1, maximum=None):
+def integer(
+	env: Mapping[str, str],
+	name: str,
+	default: int,
+	minimum: int = 1,
+	maximum: int | None = None,
+) -> int:
 	raw = env.get(name, str(default))
 	if not re.fullmatch(r'[0-9]+', raw):
 		raise ValueError(f'{name} must be an integer')
@@ -21,7 +30,7 @@ class Config:
 	bucket: str
 	key: str
 	filename: str
-	exports: list
+	exports: list[tuple[str, str]]
 	poll: int
 	timeout: int
 	cloudwatch: bool
@@ -29,7 +38,7 @@ class Config:
 	drain: int
 
 	@classmethod
-	def from_env(cls, env):
+	def from_env(cls, env: Mapping[str, str]) -> Config:
 		bucket = env.get('INPUT_BUCKET_NAME', '')
 		key = env.get('INPUT_SCRIPT_LOCATION', '')
 		instance_id = env.get('INPUT_INSTANCE_ID', '')
@@ -63,7 +72,7 @@ class Config:
 				'Use a plain script filename and paths '
 				'without control characters'
 			)
-		exports = []
+		exports: list[tuple[str, str]] = []
 		for index, line in enumerate(
 			env.get('INPUT_ENV_VARS', '').splitlines(), 1
 		):

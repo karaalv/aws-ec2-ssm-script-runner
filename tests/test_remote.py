@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import os
 import subprocess
 import tempfile
@@ -12,7 +14,9 @@ from tests.support import (
 
 
 class RemoteExecutionTests(unittest.TestCase):
-	def test_quoting_cleanup_and_exit_codes_with_real_shell(self):
+	def test_quoting_cleanup_and_exit_codes_with_real_shell(
+		self,
+	) -> None:
 		for exit_code in (0, 7):
 			with (
 				self.subTest(exit_code=exit_code),

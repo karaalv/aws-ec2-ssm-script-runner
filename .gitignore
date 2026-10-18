@@ -24,3 +24,5 @@ __pycache__/
 # Development tools
 .venv/
 .ruff_cache/
+
+.mypy_cache/

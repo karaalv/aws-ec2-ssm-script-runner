@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import contextlib
 import io
 import unittest
@@ -13,7 +15,9 @@ from tests.support import (
 
 
 class CloudWatchTests(unittest.TestCase):
-	def test_tokens_handle_repeated_messages_and_empty_pages(self):
+	def test_tokens_handle_repeated_messages_and_empty_pages(
+		self,
+	) -> None:
 		name = 'cmd/i/plugin/stdout'
 		aws = FakeAws(
 			{
@@ -37,7 +41,9 @@ class CloudWatchTests(unittest.TestCase):
 		self.assertEqual(aws.calls[-1][2]['next_token'], 'b')
 		self.assertTrue(aws.calls[-1][2]['start_from_head'])
 
-	def test_discovery_is_paginated_and_scoped_to_command(self):
+	def test_discovery_is_paginated_and_scoped_to_command(
+		self,
+	) -> None:
 		name = 'cmd/i/plugin/stderr'
 		aws = FakeAws(
 			{
@@ -61,7 +67,7 @@ class CloudWatchTests(unittest.TestCase):
 		self.assertEqual(set(watch.tokens), {name})
 		self.assertIn('[cloudwatch/stderr] error', logs.getvalue())
 
-	def test_missing_group_does_not_disable_streaming(self):
+	def test_missing_group_does_not_disable_streaming(self) -> None:
 		aws = FakeAws(
 			{
 				'describe-log-streams': [
@@ -73,7 +79,7 @@ class CloudWatchTests(unittest.TestCase):
 		watch.poll(None)
 		self.assertFalse(watch.disabled)
 
-	def test_busy_stream_has_a_per_poll_budget(self):
+	def test_busy_stream_has_a_per_poll_budget(self) -> None:
 		name = 'cmd/i/plugin/stdout'
 		aws = FakeAws(
 			{
@@ -89,7 +95,9 @@ class CloudWatchTests(unittest.TestCase):
 		self.assertFalse(watch.caught_up)
 		self.assertEqual(len(aws.calls), 11)
 
-	def test_remote_lines_cannot_issue_workflow_commands(self):
+	def test_remote_lines_cannot_issue_workflow_commands(
+		self,
+	) -> None:
 		with contextlib.redirect_stdout(io.StringIO()) as logs:
 			remote_log(
 				'cloudwatch/stdout',

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import unittest
 
 from tests.support import (
@@ -6,7 +8,7 @@ from tests.support import (
 
 
 class ValidationTests(unittest.TestCase):
-	def test_bad_inputs_fail_before_any_aws_call(self):
+	def test_bad_inputs_fail_before_any_aws_call(self) -> None:
 		for values in (
 			{'INPUT_POLL_INTERVAL': '0'},
 			{'INPUT_TIMEOUT': '-1'},
@@ -26,7 +28,9 @@ class ValidationTests(unittest.TestCase):
 			):
 				config(**values)
 
-	def test_values_are_preserved_and_errors_hide_secrets(self):
+	def test_values_are_preserved_and_errors_hide_secrets(
+		self,
+	) -> None:
 		cfg = config(
 			INPUT_ENV_VARS="# comment\nKEY=  a=b'c  \nEMPTY="
 		)
