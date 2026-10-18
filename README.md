@@ -1,94 +1,216 @@
-# aws-ec2-ssm-script-runner ⛓️
+# aws-ec2-ssm-script-runner
 
-**Release status**: Unreleased. Use `main` until a version is published.
+Reusable GitHub Action that downloads a shell script from S3 and runs it on an
+EC2 instance through AWS Systems Manager (SSM), without SSH.
 
-Reusable GitHub Action for executing scripts on AWS EC2 instances via
-AWS Systems Manager (SSM). Designed for secure, repeatable CI and
-infrastructure automation without SSH access.
+**Release status:** Unreleased. Examples use `main`; pin a reviewed commit SHA
+for production workflows.
 
-## 🔭 Overview
+## Usage
 
-This action executes shell scripts on EC2 instances using
-AWS SSM Run Command (`AWS-RunShellScript`).
-
-It is intended for use in CI pipelines and infrastructure workflows
-where direct SSH access is undesirable or unavailable.
-
-## ⚙️ How it works
-
-1. GitHub Actions assumes an AWS IAM role (via OIDC or static credentials)
-2. The AWS region is set by `aws-actions/configure-aws-credentials`
-3. The action resolves the target EC2 instance by **instance ID or Name tag**
-4. The script is pulled from AWS S3 on the target EC2 instance via SSM
-5. The script is executed using `AWS-RunShellScript`
-6. Command status and output are streamed back to the workflow
-
-## ☑️ Requirements
-
-### EC2 instance
-
-- SSM Agent installed and running
-- Instance IAM role with:
-  - `AmazonSSMManagedInstanceCore`
-  - Permission to read the specified S3 bucket
-
-### GitHub Actions
-
-- AWS credentials configured using:
-  - `aws-actions/configure-aws-credentials`
-- The AWS region **must** be set via `configure-aws-credentials`
-  - The action will fail fast if no region is configured
-- IAM permissions:
-  - `ssm:SendCommand`
-  - `ssm:GetCommandInvocation`
-  - `ec2:DescribeInstances`
-
-## 🏗️ Usage
-
-Either `instance-id` **or** `instance-name` must be provided.
-If both are provided, `instance-id` takes precedence.
+Configure AWS credentials and the region before invoking the action. OIDC is
+recommended. Either `instance-id` or `instance-name` is required; the ID takes
+precedence. A Name tag must match exactly one running instance.
 
 ```yaml
-- name: Run script on EC2
-  uses: karaalv/aws-ec2-ssm-script-runner@main
-  with:
-    instance-name: accounting-staging
-    bucket-name: ${{ vars.AWS_ACCOUNT_ID }}-scripts
-    script-location: infra/deploy/rollout.sh
-    env-vars-for-script: |
-      GIT_BRANCH=${{ github.ref_name }}
-      DEPLOY_ENV=prod
-      SOME_FLAG=true
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: eu-west-1
+
+      - name: Run deployment script on EC2
+        id: deploy
+        uses: karaalv/aws-ec2-ssm-script-runner@main
+        with:
+          instance-name: accounting-staging
+          bucket-name: example-deployment-scripts
+          script-location: infra/deploy/rollout.sh
+          env-vars-for-script: |
+            GIT_BRANCH=${{ github.ref_name }}
+            DEPLOY_ENV=staging
 ```
 
-## ➡️ Inputs
+## Logging
 
-| Name                   | Required | Default | Description                                                                 |
-|------------------------|----------|---------|-----------------------------------------------------------------------------|
-| `instance-id`          | No       | `""`    | EC2 instance ID. Takes precedence if both ID and name are provided.          |
-| `instance-name`        | No       | `""`    | Value of the EC2 `Name` tag. Must resolve to exactly one running instance.   |
-| `bucket-name`          | Yes      | —       | S3 bucket containing the script.                                            |
-| `script-location`      | Yes      | —       | S3 key (path) of the script within the bucket.                              |
-| `env-vars-for-script`  | No       | `""`    | Newline-separated environment variables exported before executing the script|
-| `script-name`          | No       | `""`    | Optional local filename override. Defaults to `basename(script-location)`.  |
-| `poll-interval-seconds`| No       | `5`     | Seconds between polling SSM for command status.                              |
-| `timeout-seconds`      | No       | `1800`  | Maximum seconds to wait before the action fails.                             |
+By default, the action polls SSM and prints stdout and stderr into the GitHub
+Actions step log. Each response is read once for status, output and exit code.
+Only newly available output is printed. SSM generally returns output after the
+command finishes, limited to the first 24,000 stdout characters and 8,000 stderr
+characters. This mode does not require CloudWatch permissions.
 
-## 🏡 Environment variables
+To see output while the script is running, enable CloudWatch logging:
 
-Environment variables passed to the script **must** be provided in
-`KEY=VALUE` notation, separated by newlines.
+```yaml
+with:
+  instance-id: i-0123456789abcdef0
+  bucket-name: example-deployment-scripts
+  script-location: infra/deploy/rollout.sh
+  cloudwatch-logs: 'true'
+  cloudwatch-log-group: /aws/ssm/deployments
+  cloudwatch-drain-seconds: '35'
+```
 
-Example:
+The data flow is:
+
+```text
+EC2 script stdout/stderr
+  -> SSM Agent
+  -> CloudWatch Logs
+  -> action polls new events
+  -> GitHub Actions step log
+```
+
+The action enables SSM's CloudWatch output, discovers streams using the command
+ID and instance ID, and reads each stream from its saved forward token. Repeated
+messages remain distinct events; previously printed events are not replayed.
+Every output line is prefixed with its source, for example
+`[cloudwatch/stdout]`, `[cloudwatch/stderr]`, `[ssm/stdout]` or `[ssm/stderr]`.
+The prefixes also prevent remote output from being interpreted as GitHub workflow
+commands. Separate stdout and stderr streams do not guarantee combined ordering.
+
+AWS uploads output every 30 seconds or when its buffer exceeds 200 KB. Script
+and application buffering can add further delay. After SSM reports completion,
+the action waits an additional 35 seconds by default to collect delayed events.
+This is a bounded collection window, not a guarantee that all CloudWatch events
+have arrived. Set `cloudwatch-drain-seconds` to `0` to skip that final collection
+window. Logs remain in CloudWatch according to the log group's retention policy.
+
+**SSM output remains the backup.** When CloudWatch reading fails permanently,
+the action warns and uses SSM output. Temporary CloudWatch errors are retried on
+later polls. At completion, the action also prints the SSM output snapshot even
+if CloudWatch worked, so the labelled backup may repeat the streamed content.
+CloudWatch failures do not change the remote script's success or failure result.
+The SSM backup still has AWS's character limits; warnings flag output at those
+limits. A logging permission failure can therefore leave only the limited SSM
+output visible in GitHub.
+
+CloudWatch logging adds AWS log ingestion, storage and applicable API charges.
+Pre-create a dedicated log group with an appropriate retention period. The action
+does not change retention or configure IAM. See the
+[AWS SSM logging documentation](https://docs.aws.amazon.com/systems-manager/latest/userguide/sysman-rc-setting-up-cwlogs.html)
+and [GetCommandInvocation limits](https://docs.aws.amazon.com/systems-manager/latest/APIReference/API_GetCommandInvocation.html).
+
+## Requirements and IAM permissions
+
+The GitHub runner requires Bash, Python 3.9 or later, and AWS CLI v2. The EC2
+instance requires SSM Agent, AWS CLI, a POSIX shell, `mktemp`, and the interpreter
+named in the downloaded script's shebang. The script runs as the SSM Agent's
+execution user, normally root, rather than your SSH user.
+
+The instance needs network access to SSM and S3, plus CloudWatch Logs when enabled.
+
+### GitHub workflow role
+
+- `ssm:SendCommand`, scoped to the target instance and `AWS-RunShellScript` document.
+- `ssm:GetCommandInvocation` for status and backup output.
+- `ssm:CancelCommand` for best-effort cancellation on timeout, interruption or
+  an unrecoverable monitoring failure.
+- `ec2:DescribeInstances` only when resolving `instance-name`.
+- With CloudWatch enabled: `logs:DescribeLogStreams` and `logs:GetLogEvents`,
+  scoped to the configured log group and its streams.
+
+### EC2 instance role
+
+- `AmazonSSMManagedInstanceCore` or equivalent SSM permissions.
+- `s3:GetObject` for the script, plus applicable KMS decrypt permissions for
+  encrypted objects.
+- With CloudWatch enabled: `logs:CreateLogStream`, `logs:DescribeLogStreams` and
+  `logs:PutLogEvents` for the configured group, plus the group discovery permissions
+  described in the AWS documentation. If SSM must create the group, also grant
+  `logs:CreateLogGroup`. AWS documents `CloudWatchAgentServerPolicy` as a managed
+  alternative; a custom policy can restrict access to the chosen group.
+
+## Inputs
+
+| Input | Required | Default | Description |
+|---|---|---|---|
+| `instance-id` | No | Empty | Target EC2 instance ID; takes precedence over Name. |
+| `instance-name` | No | Empty | Name tag matching exactly one running instance. |
+| `bucket-name` | Yes | None | S3 bucket containing the script. |
+| `script-location` | Yes | None | S3 object key of the script. |
+| `env-vars-for-script` | No | Empty | Newline-separated `KEY=VALUE` assignments. |
+| `script-name` | No | Object basename | Local filename, without directory components. |
+| `poll-interval-seconds` | No | `5` | Positive integer between monitoring polls. |
+| `timeout-seconds` | No | `1800` | Remote execution timeout and local monitoring limit, from 1 to 172800 seconds. |
+| `cloudwatch-logs` | No | `false` | Enable SSM CloudWatch output and relay events into the workflow log. |
+| `cloudwatch-log-group` | No | `/aws/ssm/AWS-RunShellScript` | Log group receiving command output. |
+| `cloudwatch-drain-seconds` | No | `35` | Extra collection window after completion, from 0 to 300 seconds. |
+
+## Outputs and failure handling
+
+| Output | Description |
+|---|---|
+| `command-id` | Written immediately after SSM accepts the command, before polling. |
+| `status` | Final SSM status, or local `MonitoringFailed`, `TimedOut` or `Cancelled` when monitoring stops early. |
+| `exit-code` | Last available remote response code; may be `-1` or empty if execution has not completed. |
+
+The action succeeds only when SSM reports `Success` and remote exit code `0`.
+SSM propagation delays and transient polling failures are retried. Persistent
+transient failures are bounded to five consecutive failed polls. Authentication,
+permission and invalid-request errors fail visibly. A successful AWS request
+resets the failure counter. Individual CLI calls have bounded timeouts.
+
+The local monitoring timeout includes time waiting for SSM delivery and execution.
+SSM also receives an execution timeout and a delivery timeout, with AWS's minimum
+30-second delivery timeout. The optional CloudWatch collection window is additional
+to monitoring time. Cancellation and final diagnostics can add up to 20 seconds.
+Set the enclosing GitHub job timeout to allow for these operations.
+
+On SIGINT or SIGTERM, the action attempts to cancel the remote command and collect
+one final SSM response. Cancellation is best effort, not proof that EC2 execution
+has stopped. A runner killed before the handler can finish cannot cancel remotely;
+the SSM execution timeout remains the backstop. An ambiguous submission failure
+is not automatically retried because that could execute the script twice.
+
+Each execution uses its own temporary directory. An exit trap removes that
+execution's files on success or failure while preserving the script's exit code.
+Shell arguments and environment values are quoted, and unconditional command
+tracing is disabled.
+
+## Environment variables
+
+Values use newline-separated `KEY=VALUE` notation. Blank lines and comment lines
+are ignored. Values retain spaces and additional equals signs. Multiline values
+are not supported. Names beginning with `SSM_RUNNER_` are reserved.
 
 ```yaml
 env-vars-for-script: |
   APP_ENV=production
   LOG_LEVEL=info
-  DEPLOY_VERSION=2026-01-11
+  DEPLOY_VERSION=2026-10-18
 ```
 
-## 📜 License
+Values are registered for masking in GitHub Actions and are not put in AWS CLI
+process arguments. Masking does not redact CloudWatch or SSM records. SSM stores
+command parameters, so obtain sensitive runtime credentials on the instance from
+Secrets Manager or Parameter Store rather than embedding them here. The action
+cannot prevent a downloaded script from printing secrets or enabling its own
+command tracing.
 
-This project is licensed under the Apache License 2.0.
-See the [LICENSE](LICENSE) file for details.
+## Development
+
+`run.sh` remains the composite action's entry point. It executes `runner.py`
+without output buffering. The Python implementation uses only the standard
+library; no package installation is required.
+
+```sh
+bash -n scripts/run.sh
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -v
+```
+
+Tests mock AWS calls and execute generated remote commands against a local fake
+AWS CLI. They cover pagination, delayed events, fallback, permissions, exit codes,
+timeouts, cancellation, quoting and cleanup. They do not prove live AWS delivery
+or IAM configuration. GitHub CI runs the same checks.
+
+## Licence
+
+Apache License 2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).

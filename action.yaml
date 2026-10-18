@@ -40,9 +40,24 @@ inputs:
     default: "5"
 
   timeout-seconds:
-    description: "Max seconds before failing"
+    description: "Remote execution timeout and local monitoring limit in seconds (1-172800)"
     required: false
     default: "1800"
+
+  cloudwatch-logs:
+    description: "Stream CloudWatch output into the workflow log; requires additional IAM permissions"
+    required: false
+    default: "false"
+
+  cloudwatch-log-group:
+    description: "CloudWatch log group used for SSM output"
+    required: false
+    default: "/aws/ssm/AWS-RunShellScript"
+
+  cloudwatch-drain-seconds:
+    description: "Additional seconds to collect delayed CloudWatch events after completion (0-300)"
+    required: false
+    default: "35"
 
 outputs:
   command-id:
@@ -50,7 +65,7 @@ outputs:
     value: ${{ steps.run.outputs.command-id }}
 
   status:
-    description: "Final SSM status"
+    description: "Final SSM status or local MonitoringFailed, TimedOut or Cancelled outcome"
     value: ${{ steps.run.outputs.status }}
 
   exit-code:
@@ -75,3 +90,6 @@ runs:
         INPUT_SCRIPT_NAME: ${{ inputs.script-name }}
         INPUT_POLL_INTERVAL: ${{ inputs.poll-interval-seconds }}
         INPUT_TIMEOUT: ${{ inputs.timeout-seconds }}
+        INPUT_CLOUDWATCH_LOGS: ${{ inputs.cloudwatch-logs }}
+        INPUT_CLOUDWATCH_LOG_GROUP: ${{ inputs.cloudwatch-log-group }}
+        INPUT_CLOUDWATCH_DRAIN: ${{ inputs.cloudwatch-drain-seconds }}
