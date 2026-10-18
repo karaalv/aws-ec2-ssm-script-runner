@@ -100,7 +100,8 @@ and [GetCommandInvocation limits](https://docs.aws.amazon.com/systems-manager/la
 
 ## Requirements and IAM permissions
 
-The GitHub runner requires Bash, Python 3.9 or later, and AWS CLI v2. The EC2
+The composite action sets up Python 3.14 before running. Consumers do not
+need a separate Python setup step. The runner requires Bash and AWS CLI v2. The EC2
 instance requires SSM Agent, AWS CLI, a POSIX shell, `mktemp`, and the interpreter
 named in the downloaded script's shebang. The script runs as the SSM Agent's
 execution user, normally root, rather than your SSH user.
@@ -197,19 +198,61 @@ command tracing.
 
 ## Development
 
-`run.sh` remains the composite action's entry point. It executes `runner.py`
-without output buffering. The Python implementation uses only the standard
-library; no package installation is required.
+The composite action sets up Python, then calls `scripts/run.sh`. The shell
+entry point runs `python -u -m ec2_ssm_runner` from the action checkout. The
+package uses only the standard library; there are no runtime pip dependencies.
+Python setup changes the Python available to subsequent steps in the calling job.
+
+```text
+ec2_ssm_runner/
+  __main__.py         Package entry point
+  cli.py              Environment checks and signal handlers
+  config.py           Action input parsing and validation
+  runner.py           Submission, polling and failure cleanup
+  remote.py           Quoted shell commands executed on EC2
+  github.py           Action outputs and value masking
+  errors.py           Execution errors and retryable AWS codes
+  aws/
+    cli.py            Bounded AWS CLI requests and JSON handling
+    ssm.py            Instance lookup and SSM API operations
+  logs/
+    console.py        Prefixed console output
+    cloudwatch.py     Stream discovery, cursors and final collection
+    ssm.py            Direct SSM output backup and limits
+tests/
+  fixtures/           Fake AWS executable for process tests
+  support.py          Shared responses, input fixtures and fake clock
+  test_*.py           Tests grouped by module
+```
+
+Start with `runner.py` for the execution flow. AWS operations live under `aws/`,
+and both output paths live under `logs/`. `config.py` owns input validation;
+`remote.py` owns the shell payload sent to the instance.
+
+The Ruff configuration in `pyproject.toml` matches the portfolio agent exactly:
+70-character lines, single quotes, tabs, automatic fixes, and the `E`, `F`, `I`,
+`B` and `UP` rules. Ruff is a development dependency pinned in
+`requirements-dev.txt`; consumers do not install it.
 
 ```sh
+uv venv --python 3.14
+uv pip sync --python .venv/bin/python requirements-dev.txt
+```
+
+```sh
+.venv/bin/ruff check --no-fix .
+.venv/bin/ruff format --check .
 bash -n scripts/run.sh
-PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -v
+PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m unittest discover -s tests -v
 ```
 
 Tests mock AWS calls and execute generated remote commands against a local fake
 AWS CLI. They cover pagination, delayed events, fallback, permissions, exit codes,
 timeouts, cancellation, quoting and cleanup. They do not prove live AWS delivery
-or IAM configuration. GitHub CI runs the same checks.
+or IAM configuration. GitHub CI runs Ruff and the regression tests, plus a
+composite-action smoke test against the fake AWS executable. The smoke test
+exercises Python setup, action input wiring and published step outputs without
+contacting AWS.
 
 ## Licence
 

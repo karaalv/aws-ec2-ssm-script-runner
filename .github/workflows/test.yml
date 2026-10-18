@@ -1,4 +1,4 @@
-name: Tests
+name: Checks
 
 on:
   push:
@@ -8,6 +8,20 @@ permissions:
   contents: read
 
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+      - name: Install development tools
+        run: python -m pip install -r requirements-dev.txt
+      - name: Lint
+        run: ruff check --no-fix .
+      - name: Check formatting
+        run: ruff format --check .
+
   test:
     runs-on: ubuntu-latest
     strategy:
@@ -24,3 +38,35 @@ jobs:
         env:
           PYTHONDONTWRITEBYTECODE: '1'
         run: python -m unittest discover -s tests -v
+
+  action-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Prepare fake AWS CLI
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/mock-aws"
+          { echo '#!/usr/bin/env python3'; cat tests/fixtures/aws.py; } > "$RUNNER_TEMP/mock-aws/aws"
+          chmod +x "$RUNNER_TEMP/mock-aws/aws"
+          echo "$RUNNER_TEMP/mock-aws" >> "$GITHUB_PATH"
+      - name: Run the composite action
+        id: smoke
+        uses: ./
+        env:
+          AWS_REGION: eu-west-1
+        with:
+          instance-id: i-example
+          bucket-name: example-scripts
+          script-location: deploy/run.sh
+          timeout-seconds: '10'
+      - name: Verify action outputs
+        shell: bash
+        env:
+          COMMAND_ID: ${{ steps.smoke.outputs.command-id }}
+          STATUS: ${{ steps.smoke.outputs.status }}
+          EXIT_CODE: ${{ steps.smoke.outputs.exit-code }}
+        run: |
+          test "$COMMAND_ID" = cmd
+          test "$STATUS" = Success
+          test "$EXIT_CODE" = 0

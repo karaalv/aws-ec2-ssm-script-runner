@@ -75,6 +75,11 @@ outputs:
 runs:
   using: "composite"
   steps:
+    - name: Set up Python
+      uses: actions/setup-python@v7
+      with:
+        python-version: '3.14'
+
     - name: Run script via SSM
       id: run
       shell: bash
