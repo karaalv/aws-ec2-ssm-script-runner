@@ -237,7 +237,8 @@ annotations do not add runtime validation or dependencies.
 The Ruff configuration in `pyproject.toml` matches the portfolio agent exactly:
 70-character lines, single quotes, tabs, automatic fixes, and the `E`, `F`, `I`,
 `B` and `UP` rules. Ruff is a development dependency pinned in
-`requirements-dev.txt`; consumers do not install it.
+`requirements-dev.txt`; consumers do not install it. Pyright is also pinned
+there and checks the runner package in CI.
 
 ```sh
 uv venv --python 3.14
@@ -247,6 +248,7 @@ uv pip sync --python .venv/bin/python requirements-dev.txt
 ```sh
 .venv/bin/ruff check --no-fix .
 .venv/bin/ruff format --check .
+.venv/bin/pyright ec2_ssm_runner
 bash -n scripts/run.sh
 PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m unittest discover -s tests -v
 ```
@@ -254,7 +256,7 @@ PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m unittest discover -s tests -v
 Tests mock AWS calls and execute generated remote commands against a local fake
 AWS CLI. They cover pagination, delayed events, fallback, permissions, exit codes,
 timeouts, cancellation, quoting and cleanup. They do not prove live AWS delivery
-or IAM configuration. GitHub CI runs Ruff and the regression tests, plus a
+or IAM configuration. GitHub CI runs Ruff, Pyright and the regression tests, plus a
 composite-action smoke test against the fake AWS executable. The smoke test
 exercises Python setup, action input wiring and published step outputs without
 contacting AWS.

@@ -7,9 +7,7 @@ from typing import cast
 
 from ..aws.types import (
 	AwsTransport,
-	LogEventQuery,
 	LogEventsPage,
-	LogStreamQuery,
 	LogStreamsPage,
 )
 from ..errors import TRANSIENT, AwsError, DeadlineExceeded
@@ -66,19 +64,15 @@ class CloudWatch:
 
 	def _discover_streams(self, deadline: float | None) -> None:
 		# Discover names without assuming the SSM plugin identifier.
-		params: LogStreamQuery = dict(
-			log_group_name=self.group,
-			log_stream_name_prefix=self.prefix,
-		)
-		if self.discovery_token:
-			params['next_token'] = self.discovery_token
 		page = cast(
 			LogStreamsPage,
 			self.aws.call(
 				'logs',
 				'describe-log-streams',
 				deadline=deadline,
-				**params,
+				log_group_name=self.group,
+				log_stream_name_prefix=self.prefix,
+				next_token=self.discovery_token,
 			),
 		)
 		self.discovery_token = page.get('nextToken')
@@ -99,20 +93,16 @@ class CloudWatch:
 		token = self.tokens[name]
 		# Bound each poll so busy streams cannot starve status checks.
 		for _ in range(10):
-			params: LogEventQuery = dict(
-				log_group_name=self.group,
-				log_stream_name=name,
-				start_from_head=True,
-			)
-			if token:
-				params['next_token'] = token
 			page = cast(
 				LogEventsPage,
 				self.aws.call(
 					'logs',
 					'get-log-events',
 					deadline=deadline,
-					**params,
+					log_group_name=self.group,
+					log_stream_name=name,
+					start_from_head=True,
+					next_token=token,
 				),
 			)
 			for event in page.get('events', []):

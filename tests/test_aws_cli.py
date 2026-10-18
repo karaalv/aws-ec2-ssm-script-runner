@@ -49,6 +49,23 @@ class AwsCliTests(unittest.TestCase):
 		self.assertEqual(kwargs['env']['AWS_MAX_ATTEMPTS'], '1')
 		self.assertEqual(kwargs['timeout'], 30)
 
+	def test_absent_optional_arguments_are_omitted(self) -> None:
+		completed = subprocess.CompletedProcess([], 0, '{}', '')
+		with patch.object(
+			aws_cli.subprocess,
+			'run',
+			return_value=completed,
+		) as run:
+			aws_cli.AwsCli().call(
+				'logs',
+				'get-log-events',
+				next_token=None,
+				log_stream_name='command/instance/stdout',
+			)
+		args = run.call_args.args[0]
+		self.assertNotIn('--next-token', args)
+		self.assertIn('--log-stream-name', args)
+
 	def test_cli_error_codes_are_classified(self) -> None:
 		completed = subprocess.CompletedProcess(
 			[],

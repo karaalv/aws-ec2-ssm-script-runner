@@ -23,7 +23,7 @@ class AwsCli:
 		*,
 		payload: Mapping[str, object] | None = None,
 		deadline: float | None = None,
-		**params: str | int | bool,
+		**params: str | int | bool | None,
 	) -> dict[str, Any]:
 		remaining = (
 			30 if deadline is None else deadline - time.monotonic()
@@ -44,6 +44,8 @@ class AwsCli:
 			'20',
 		]
 		for key, value in params.items():
+			if value is None:
+				continue
 			option = '--' + key.replace('_', '-')
 			args += (
 				[option] if value is True else [option, str(value)]

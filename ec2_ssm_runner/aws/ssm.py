@@ -52,9 +52,10 @@ class SsmClient:
 				for reservation in response.get('Reservations', [])
 				for item in reservation.get('Instances', [])
 			)
-			if not response.get('NextToken'):
+			next_token = response.get('NextToken')
+			if not next_token:
 				break
-			payload['NextToken'] = response['NextToken']
+			payload['NextToken'] = next_token
 		if len(instances) != 1:
 			raise ValueError(
 				f'Name tag matched {len(instances)} '

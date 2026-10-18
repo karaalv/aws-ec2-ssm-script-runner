@@ -38,19 +38,6 @@ class Submission(TypedDict):
 	Command: Command
 
 
-class LogStreamQuery(TypedDict, total=False):
-	log_group_name: str
-	log_stream_name_prefix: str
-	next_token: str
-
-
-class LogEventQuery(TypedDict, total=False):
-	log_group_name: str
-	log_stream_name: str
-	start_from_head: bool
-	next_token: str
-
-
 class LogStream(TypedDict):
 	logStreamName: str
 
@@ -77,7 +64,7 @@ class AwsTransport(Protocol):
 		*,
 		payload: Mapping[str, object] | None = None,
 		deadline: float | None = None,
-		**params: str | int | bool,
+		**params: str | int | bool | None,
 	) -> dict[str, Any]:
 		"""Return a JSON object, narrowed by each service adapter."""
 		...
